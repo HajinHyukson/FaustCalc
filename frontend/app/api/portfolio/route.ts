@@ -32,7 +32,11 @@ function normalizeTickers(raw: string): string[] {
 }
 
 function findRepoRoot(): string | null {
-  const candidates = [path.resolve(process.cwd(), ".."), process.cwd()];
+  const candidates = [
+    process.cwd(),
+    path.resolve(process.cwd(), ".."),
+    path.resolve(process.cwd(), "../.."),
+  ];
   for (const candidate of candidates) {
     const cliPath = path.join(candidate, "src", "cli.py");
     if (fs.existsSync(cliPath)) {
