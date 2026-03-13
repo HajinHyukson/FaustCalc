@@ -14,6 +14,24 @@ type ApiError = {
   exitCode?: number;
 };
 
+async function readApiPayload(response: Response): Promise<{
+  json: Record<string, unknown> | null;
+  text: string;
+}> {
+  const text = await response.text();
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    return { json: null, text };
+  }
+
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    return { json: parsed, text };
+  } catch {
+    return { json: null, text };
+  }
+}
+
 export default function Page() {
   const [requiredTickers, setRequiredTickers] = useState("SPY,QQQ");
   const [optionalTickers, setOptionalTickers] = useState("AAPL,MSFT,NVDA,AMZN");
@@ -46,15 +64,27 @@ export default function Page() {
         }),
       });
 
+      const payload = await readApiPayload(response);
+
       if (!response.ok) {
-        const payload = (await response.json()) as ApiError;
-        throw new Error([payload.error, payload.details].filter(Boolean).join("\n"));
+        const apiError = payload.json as ApiError | null;
+        const message = [
+          apiError?.error ?? `Request failed with HTTP ${response.status}.`,
+          apiError?.details ?? (!apiError ? payload.text.slice(0, 800) : ""),
+        ]
+          .filter(Boolean)
+          .join("\n");
+        throw new Error(message || "Request failed.");
       }
 
-      const payload = (await response.json()) as ApiSuccess;
-      setReport(payload.report || "(No output)");
-      if (payload.stderr) {
-        setReport((prev) => `${prev}\n\n[stderr]\n${payload.stderr}`);
+      if (!payload.json) {
+        throw new Error("API returned a non-JSON success response.");
+      }
+
+      const apiSuccess = payload.json as ApiSuccess;
+      setReport(apiSuccess.report || "(No output)");
+      if (apiSuccess.stderr) {
+        setReport((prev) => `${prev}\n\n[stderr]\n${apiSuccess.stderr}`);
       }
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Unknown request failure.");

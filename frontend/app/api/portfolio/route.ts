@@ -79,12 +79,24 @@ async function proxyToVercelPython(request: NextRequest, rawBody: string) {
     cache: "no-store",
   });
 
-  return new NextResponse(await upstream.text(), {
-    status: upstream.status,
-    headers: {
-      "Content-Type": upstream.headers.get("content-type") ?? "application/json",
+  const contentType = upstream.headers.get("content-type") ?? "";
+  const raw = await upstream.text();
+  if (contentType.toLowerCase().includes("application/json")) {
+    return new NextResponse(raw, {
+      status: upstream.status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  return NextResponse.json(
+    {
+      error: "Upstream portfolio runner returned non-JSON output.",
+      details: raw.slice(0, 1000) || "No response body received.",
+      upstreamStatus: upstream.status,
+      upstreamContentType: contentType || "unknown",
     },
-  });
+    { status: upstream.status >= 400 ? upstream.status : 502 }
+  );
 }
 
 export async function POST(request: NextRequest) {
