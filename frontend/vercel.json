@@ -1,7 +1,12 @@
 {
   "functions": {
     "api/*.py": {
-      "includeFiles": "../src/**"
+      "includeFiles": [
+        "../src/**",
+        "../requirements.txt",
+        "requirements.txt",
+        "api/**/*.py"
+      ]
     }
   }
 }

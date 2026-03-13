@@ -9,8 +9,30 @@ from http.server import BaseHTTPRequestHandler
 TICKER_RE = re.compile(r"^[A-Z0-9.-]+$")
 
 
-def _repo_root() -> str:
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+def _repo_root() -> tuple[str | None, list[str]]:
+    file_dir = os.path.abspath(os.path.dirname(__file__))
+    cwd = os.path.abspath(os.getcwd())
+    candidates: list[str] = []
+
+    def add(path: str) -> None:
+        normalized = os.path.abspath(path)
+        if normalized not in candidates:
+            candidates.append(normalized)
+
+    for base in (file_dir, cwd, "/var/task"):
+        add(base)
+        add(os.path.join(base, ".."))
+        add(os.path.join(base, "..", ".."))
+        add(os.path.join(base, "..", "..", ".."))
+        add(os.path.join(base, ".next", "server"))
+        add(os.path.join(base, ".next", "server", "app"))
+
+    for candidate in candidates:
+        cli_path = os.path.join(candidate, "src", "cli.py")
+        if os.path.exists(cli_path):
+            return candidate, candidates
+
+    return None, candidates
 
 
 def _normalize_tickers(raw: str) -> list[str]:
@@ -67,13 +89,35 @@ class handler(BaseHTTPRequestHandler):
             _json_response(self, 400, {"error": "cash must be a positive number."})
             return
 
-        root = _repo_root()
-        cli_path = os.path.join(root, "src", "cli.py")
+        root, searched = _repo_root()
+        cli_path = os.path.join(root, "src", "cli.py") if root else ""
+        requirements_path = os.path.join(root, "requirements.txt") if root else ""
+        frontend_requirements_path = os.path.join(root, "frontend", "requirements.txt") if root else ""
         if not os.path.exists(cli_path):
             _json_response(
                 self,
                 500,
-                {"error": "Unable to find src/cli.py in deployment bundle. Verify Vercel includeFiles configuration."},
+                {
+                    "error": "Unable to find src/cli.py in deployment bundle. Verify Vercel includeFiles configuration.",
+                    "details": (
+                        f"cwd={os.getcwd()}; file_dir={os.path.dirname(__file__)}; "
+                        f"searched={','.join(searched)}"
+                    ),
+                },
+            )
+            return
+
+        if not (os.path.exists(requirements_path) or os.path.exists(frontend_requirements_path)):
+            _json_response(
+                self,
+                500,
+                {
+                    "error": "Unable to find requirements.txt in deployment bundle.",
+                    "details": (
+                        f"checked={requirements_path},{frontend_requirements_path}; "
+                        f"cwd={os.getcwd()}; file_dir={os.path.dirname(__file__)}"
+                    ),
+                },
             )
             return
 
