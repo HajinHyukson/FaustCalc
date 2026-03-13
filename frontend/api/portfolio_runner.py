@@ -1,8 +1,9 @@
 import json
+import io
 import os
 import re
-import subprocess
-import sys
+import traceback
+from contextlib import redirect_stderr, redirect_stdout
 from http.server import BaseHTTPRequestHandler
 
 
@@ -121,73 +122,35 @@ class handler(BaseHTTPRequestHandler):
             )
             return
 
-        args = [
-            sys.executable,
-            "-m",
-            "src.cli",
-            "--required-tickers",
-            ",".join(required),
-            "--years",
-            str(years),
-            "--freq",
-            freq,
-            "--cash",
-            str(cash),
-            "--log-level",
-            log_level,
-            "--no-plot-frontier",
-            "--cache" if cache else "--no-cache",
-        ]
-        if optional:
-            args.extend(["--optional-tickers", ",".join(optional)])
+        os.environ.setdefault("PYTHONUNBUFFERED", "1")
+        os.environ.setdefault("FAUSTCALC_CACHE_DIR", "/tmp/faustcalc-cache")
 
-        env = os.environ.copy()
-        env.setdefault("PYTHONUNBUFFERED", "1")
-        env.setdefault("FAUSTCALC_CACHE_DIR", "/tmp/faustcalc-cache")
-        # Vercel may inject third-party deps into sys.path for the current process.
-        # Preserve that path in subprocess so `python -m src.cli` can import deps.
-        current_paths = [p for p in sys.path if p]
-        inherited_pythonpath = env.get("PYTHONPATH", "")
-        if inherited_pythonpath:
-            current_paths.extend([p for p in inherited_pythonpath.split(os.pathsep) if p])
-        deduped_paths: list[str] = []
-        seen: set[str] = set()
-        for p in current_paths:
-            if p not in seen:
-                seen.add(p)
-                deduped_paths.append(p)
-        if deduped_paths:
-            env["PYTHONPATH"] = os.pathsep.join(deduped_paths)
-
+        stdout_buffer = io.StringIO()
+        stderr_buffer = io.StringIO()
         try:
-            result = subprocess.run(
-                args,
-                cwd=root,
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=55,
-                check=False,
-            )
-        except subprocess.TimeoutExpired:
-            _json_response(
-                self,
-                504,
-                {"error": "Portfolio engine timed out.", "details": "The Python function exceeded the execution timeout."},
-            )
-            return
-        except Exception as exc:
-            _json_response(self, 500, {"error": "Portfolio engine failed.", "details": str(exc)})
-            return
+            from src.cli import main as cli_main
 
-        if result.returncode != 0:
+            with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+                cli_main(
+                    required_tickers=",".join(required),
+                    optional_tickers=",".join(optional),
+                    years=years,
+                    freq=freq,
+                    cash=cash,
+                    cache=cache,
+                    no_cache=not cache,
+                    plot_frontier=False,
+                    no_plot_frontier=True,
+                    log_level=log_level,
+                )
+        except Exception as exc:
             _json_response(
                 self,
                 500,
                 {
                     "error": "Portfolio engine failed.",
-                    "details": (result.stderr or result.stdout or "Python process failed.").strip(),
-                    "exitCode": result.returncode,
+                    "details": (stderr_buffer.getvalue() or traceback.format_exc() or str(exc)).strip(),
+                    "exitCode": 1,
                 },
             )
             return
@@ -196,9 +159,9 @@ class handler(BaseHTTPRequestHandler):
             self,
             200,
             {
-                "exitCode": result.returncode,
-                "report": result.stdout.strip(),
-                "stderr": result.stderr.strip(),
+                "exitCode": 0,
+                "report": stdout_buffer.getvalue().strip(),
+                "stderr": stderr_buffer.getvalue().strip(),
             },
         )
 
