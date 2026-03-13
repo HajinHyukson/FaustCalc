@@ -32,11 +32,22 @@ function normalizeTickers(raw: string): string[] {
 }
 
 function findRepoRoot(): string | null {
-  const candidates = [
-    process.cwd(),
-    path.resolve(process.cwd(), ".."),
-    path.resolve(process.cwd(), "../.."),
-  ];
+  const cwd = process.cwd();
+  const candidates = new Set<string>([
+    cwd,
+    path.resolve(cwd, ".."),
+    path.resolve(cwd, "../.."),
+    path.resolve(cwd, "../../.."),
+    path.resolve(cwd, "../../../.."),
+    "/var/task",
+    path.resolve("/var/task", ".next/server"),
+    path.resolve("/var/task", ".next/server/app"),
+  ]);
+  // Common Next.js traced-file locations when deployed.
+  for (const base of [...candidates]) {
+    candidates.add(path.resolve(base, ".."));
+    candidates.add(path.resolve(base, "../.."));
+  }
   for (const candidate of candidates) {
     const cliPath = path.join(candidate, "src", "cli.py");
     if (fs.existsSync(cliPath)) {
@@ -44,6 +55,27 @@ function findRepoRoot(): string | null {
     }
   }
   return null;
+}
+
+function debugRepoRootCandidates(): string[] {
+  const cwd = process.cwd();
+  const candidates = new Set<string>([
+    cwd,
+    path.resolve(cwd, ".."),
+    path.resolve(cwd, "../.."),
+    path.resolve(cwd, "../../.."),
+    path.resolve(cwd, "../../../.."),
+    "/var/task",
+    path.resolve("/var/task", ".next/server"),
+    path.resolve("/var/task", ".next/server/app"),
+  ]);
+  for (const base of [...candidates]) {
+    candidates.add(path.resolve(base, ".."));
+    candidates.add(path.resolve(base, "../.."));
+  }
+  return [...candidates]
+    .map((candidate) => path.join(candidate, "src", "cli.py"))
+    .filter((candidate) => fs.existsSync(path.dirname(candidate)));
 }
 
 async function runCli(command: string, args: string[], cwd: string): Promise<{ code: number; stdout: string; stderr: string }> {
@@ -139,7 +171,10 @@ export async function POST(request: NextRequest) {
     const root = findRepoRoot();
     if (!root) {
       return NextResponse.json(
-        { error: "Unable to find src/cli.py in deployment bundle. Verify Vercel Root Directory and included files." },
+        {
+          error: "Unable to find src/cli.py in deployment bundle. Verify Vercel Root Directory and included files.",
+          details: `cwd=${process.cwd()}; searched=${debugRepoRootCandidates().join(", ") || "none"}`,
+        },
         { status: 500 }
       );
     }
