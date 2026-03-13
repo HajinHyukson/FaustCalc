@@ -1,4 +1,3 @@
-import cvxpy as cp
 import numpy as np
 from scipy.optimize import minimize
 
@@ -31,26 +30,27 @@ def _validate_cap(n, cap):
 
 def minimum_variance(cov, cap=None):
     """Long-only minimum-variance optimization."""
-
     n = cov.shape[0]
     _validate_cap(n, cap)
+    bounds = [(0.0, cap if cap is not None else 1.0) for _ in range(n)]
+    x0 = equal_weight(n)
 
-    w = cp.Variable(n)
-    objective = cp.Minimize(cp.quad_form(w, cov))
+    def objective(w):
+        w = _normalize(w)
+        return float(w @ cov @ w)
 
-    constraints = [
-        w >= 0,
-        cp.sum(w) == 1,
-    ]
-    if cap is not None:
-        constraints.append(w <= cap)
-
-    problem = cp.Problem(objective, constraints)
-    problem.solve(warm_start=True)
-
-    if w.value is None:
-        raise ValueError("Minimum variance optimization failed.")
-    return _normalize(w.value)
+    constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1.0}]
+    result = minimize(
+        objective,
+        x0,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=constraints,
+        options={"maxiter": 2000, "ftol": 1e-12},
+    )
+    if not result.success:
+        raise ValueError(f"Minimum variance optimization failed: {result.message}")
+    return _normalize(result.x)
 
 
 def minimum_variance_with_turnover(
@@ -65,46 +65,68 @@ def minimum_variance_with_turnover(
     n = cov.shape[0]
     _validate_cap(n, cap)
     prev = _normalize(previous_weights)
-    w = cp.Variable(n)
-    objective = cp.quad_form(w, cov)
-    if turnover_penalty > 0:
-        objective += float(turnover_penalty) * cp.norm1(w - prev)
-    constraints = [w >= 0, cp.sum(w) == 1]
-    if cap is not None:
-        constraints.append(w <= cap)
+    upper_cap = cap if cap is not None else 1.0
+    bounds = [(0.0, upper_cap) for _ in range(n)]
     if no_trade_buffer > 0:
-        constraints.append(cp.abs(w - prev) <= no_trade_buffer)
+        bounds = [
+            (
+                max(0.0, float(prev_i) - float(no_trade_buffer)),
+                min(upper_cap, float(prev_i) + float(no_trade_buffer)),
+            )
+            for prev_i in prev
+        ]
 
-    problem = cp.Problem(cp.Minimize(objective), constraints)
-    problem.solve(warm_start=True)
-    if w.value is None:
-        raise ValueError("Turnover-aware minimum variance optimization failed.")
-    return _normalize(w.value)
+    x0 = np.clip(prev, [b[0] for b in bounds], [b[1] for b in bounds])
+    if x0.sum() <= 0:
+        x0 = equal_weight(n)
+    x0 = x0 / x0.sum()
+
+    def objective(w):
+        w = _normalize(w)
+        base = float(w @ cov @ w)
+        if turnover_penalty > 0:
+            base += float(turnover_penalty) * float(np.abs(w - prev).sum())
+        return base
+
+    constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1.0}]
+    result = minimize(
+        objective,
+        x0,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=constraints,
+        options={"maxiter": 3000, "ftol": 1e-12},
+    )
+    if not result.success:
+        raise ValueError(f"Turnover-aware minimum variance optimization failed: {result.message}")
+    return _normalize(result.x)
 
 
 def max_diversification(cov, cap=None):
     """Maximum diversification proxy under long-only constraints."""
-
     n = cov.shape[0]
     _validate_cap(n, cap)
-
     sigma = np.sqrt(np.diag(cov))
-    w = cp.Variable(n)
-    objective = cp.Maximize(sigma @ w)
+    bounds = [(0.0, cap if cap is not None else 1.0) for _ in range(n)]
+    x0 = equal_weight(n)
 
-    constraints = [
-        w >= 0,
-        cp.quad_form(w, cov) <= 1
-    ]
-    if cap is not None:
-        constraints.append(w <= cap)
+    def objective(w):
+        w = _normalize(w)
+        denom = float(np.sqrt(max(w @ cov @ w, 1e-16)))
+        return float(-(sigma @ w) / denom)
 
-    problem = cp.Problem(objective, constraints)
-    problem.solve(warm_start=True)
-
-    if w.value is None:
-        raise ValueError("Maximum diversification optimization failed.")
-    return _normalize(w.value)
+    constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1.0}]
+    result = minimize(
+        objective,
+        x0,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=constraints,
+        options={"maxiter": 2000, "ftol": 1e-12},
+    )
+    if not result.success:
+        raise ValueError(f"Maximum diversification optimization failed: {result.message}")
+    return _normalize(result.x)
 
 
 def equal_weight(n):
@@ -155,37 +177,54 @@ def efficient_frontier(cov, exp_returns, points=31, cap=None):
     if points < 3:
         raise ValueError("Frontier points must be at least 3.")
 
-    w = cp.Variable(n)
-    constraints = [w >= 0, cp.sum(w) == 1]
-    if cap is not None:
-        constraints.append(w <= cap)
+    bounds = [(0.0, cap if cap is not None else 1.0) for _ in range(n)]
+    x0 = equal_weight(n)
+    sum_constraint = {"type": "eq", "fun": lambda w: np.sum(w) - 1.0}
 
-    min_ret_prob = cp.Problem(cp.Minimize(mu @ w), constraints)
-    min_ret_prob.solve(warm_start=True)
-    if w.value is None:
+    min_ret_result = minimize(
+        lambda w: float(mu @ _normalize(w)),
+        x0,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=[sum_constraint],
+        options={"maxiter": 2000, "ftol": 1e-12},
+    )
+    if not min_ret_result.success:
         raise ValueError("Efficient frontier failed: unable to find minimum-return portfolio.")
-    ret_min = float(mu @ w.value)
+    ret_min = float(mu @ _normalize(min_ret_result.x))
 
-    max_ret_prob = cp.Problem(cp.Maximize(mu @ w), constraints)
-    max_ret_prob.solve(warm_start=True)
-    if w.value is None:
+    max_ret_result = minimize(
+        lambda w: float(-(mu @ _normalize(w))),
+        x0,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=[sum_constraint],
+        options={"maxiter": 2000, "ftol": 1e-12},
+    )
+    if not max_ret_result.success:
         raise ValueError("Efficient frontier failed: unable to find maximum-return portfolio.")
-    ret_max = float(mu @ w.value)
+    ret_max = float(mu @ _normalize(max_ret_result.x))
 
     targets = np.linspace(ret_min, ret_max, points)
     frontier_weights = []
     frontier_returns = []
 
     for target in targets:
-        wf = cp.Variable(n)
-        cons = [wf >= 0, cp.sum(wf) == 1, mu @ wf >= target]
-        if cap is not None:
-            cons.append(wf <= cap)
-        prob = cp.Problem(cp.Minimize(cp.quad_form(wf, cov)), cons)
-        prob.solve(warm_start=True)
-        if wf.value is None:
+        target_constraints = [
+            sum_constraint,
+            {"type": "ineq", "fun": lambda w, t=float(target): float(mu @ w) - t},
+        ]
+        result = minimize(
+            lambda w: float(_normalize(w) @ cov @ _normalize(w)),
+            x0,
+            method="SLSQP",
+            bounds=bounds,
+            constraints=target_constraints,
+            options={"maxiter": 3000, "ftol": 1e-12},
+        )
+        if not result.success:
             continue
-        weights = _normalize(wf.value)
+        weights = _normalize(result.x)
         frontier_weights.append(weights)
         frontier_returns.append(float(mu @ weights))
 
