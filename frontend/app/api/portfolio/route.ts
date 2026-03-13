@@ -71,9 +71,30 @@ async function runCli(command: string, args: string[], cwd: string): Promise<{ c
   });
 }
 
+async function proxyToVercelPython(request: NextRequest, rawBody: string) {
+  const upstream = await fetch(`${request.nextUrl.origin}/api/portfolio_runner`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: rawBody,
+    cache: "no-store",
+  });
+
+  return new NextResponse(await upstream.text(), {
+    status: upstream.status,
+    headers: {
+      "Content-Type": upstream.headers.get("content-type") ?? "application/json",
+    },
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as RequestPayload;
+    const rawBody = await request.text();
+    if (process.env.VERCEL === "1") {
+      return await proxyToVercelPython(request, rawBody);
+    }
+
+    const body = JSON.parse(rawBody || "{}") as RequestPayload;
 
     const required = normalizeTickers(body.requiredTickers ?? "");
     const optional = normalizeTickers(body.optionalTickers ?? "");

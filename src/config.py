@@ -7,6 +7,15 @@ from .errors import ConfigError
 _DOTENV_LOADED = False
 
 
+def _default_cache_dir() -> Path:
+    configured = (os.getenv("FAUSTCALC_CACHE_DIR") or "").strip()
+    if configured:
+        return Path(configured)
+    if os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+        return Path("/tmp/faustcalc-cache")
+    return Path(".cache")
+
+
 @dataclass(frozen=True)
 class Settings:
     fmp_api_key: str
@@ -14,7 +23,7 @@ class Settings:
     request_timeout_seconds: int = 30
     default_years: int = 3
     default_frequency: str = "weekly"
-    cache_dir: Path = Path(".cache")
+    cache_dir: Path = _default_cache_dir()
     cache_ttl_hours: int = 24
     min_assets: int = 2
     max_assets: int = 1000

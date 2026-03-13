@@ -67,7 +67,7 @@ export default function Page() {
     <main>
       <h1>FaustCalc on Vercel</h1>
       <p className="muted">
-        This page calls <code>/api/portfolio</code>, which runs <code>python -m src.cli</code> on the server.
+        This page calls <code>/api/portfolio</code>, which runs the portfolio engine in Python on the server.
       </p>
 
       <section className="card" style={{ marginTop: "1rem" }}>

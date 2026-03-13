@@ -127,8 +127,9 @@ pytest
 
 ## Vercel Deployment (Frontend + API Route)
 
-This repo now includes a Next.js app in `frontend/` with a server API route:
-- `POST /api/portfolio` -> runs `python -m src.cli` and returns the report text.
+This repo now includes a Next.js app in `frontend/` with:
+- `POST /api/portfolio` -> Next.js API route used by the UI
+- `POST /api/portfolio_runner` -> Vercel Python Function that runs `python -m src.cli`
 
 ### 1) Vercel project settings
 
@@ -143,7 +144,6 @@ This repo now includes a Next.js app in `frontend/` with a server API route:
 Add the following in **Project Settings -> Environment Variables**:
 
 - `FMP_API_KEY` = your Financial Modeling Prep key (required)
-- `PYTHON_PATH` = `python3` (recommended for Vercel Linux runtime)
 
 ### 3) What the deployment runs
 
@@ -165,5 +165,6 @@ Add the following in **Project Settings -> Environment Variables**:
 
 ### 4) Notes
 
-- The API route executes from Node runtime and shells out to Python, so the Python source under `src/` must be present in the deployment bundle.
-- If Python command resolution fails, set `PYTHON_PATH` explicitly.
+- In Vercel, the UI posts to the Next.js route, which proxies to the Python Function. This avoids `spawn python ENOENT` errors in the Node runtime.
+- The Python Function includes `../src/**` via [`frontend/vercel.json`](c:/Users/gkwls/FaustCalc/frontend/vercel.json) and installs Python dependencies via [`frontend/requirements.txt`](c:/Users/gkwls/FaustCalc/frontend/requirements.txt).
+- Cache files are written to `/tmp/faustcalc-cache` on Vercel because the deployment bundle is read-only.
