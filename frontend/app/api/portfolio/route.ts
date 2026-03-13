@@ -122,15 +122,33 @@ export async function POST(request: NextRequest) {
       args.push("--optional-tickers", optional.join(","));
     }
 
-    const pythonCommand = process.env.PYTHON_PATH || "python";
-    const result = await runCli(pythonCommand, args, root);
+    const configuredPython = process.env.PYTHON_PATH?.trim();
+    const pythonCommands = configuredPython
+      ? [configuredPython]
+      : ["python3", "python"];
 
-    if (result.code !== 0) {
+    let result: { code: number; stdout: string; stderr: string } | null = null;
+    const failures: string[] = [];
+    for (const command of pythonCommands) {
+      result = await runCli(command, args, root);
+      if (result.code === 0) {
+        break;
+      }
+      const details = (result.stderr || result.stdout || "").trim();
+      failures.push(`[${command}] ${details || "no error output"}`);
+      if (!/ENOENT|not found|No such file/i.test(details)) {
+        break;
+      }
+    }
+
+    if (!result || result.code !== 0) {
       return NextResponse.json(
         {
           error: "Portfolio engine failed.",
-          details: result.stderr || result.stdout || "Unknown Python execution error.",
-          exitCode: result.code,
+          details:
+            failures.join("\n\n") ||
+            "Python process failed. Set PYTHON_PATH (for Vercel usually: python3).",
+          exitCode: result?.code ?? 1,
         },
         { status: 500 }
       );
