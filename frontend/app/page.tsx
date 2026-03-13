@@ -19,7 +19,7 @@ export default function Page() {
   const [optionalTickers, setOptionalTickers] = useState("AAPL,MSFT,NVDA,AMZN");
   const [years, setYears] = useState(3);
   const [freq, setFreq] = useState<"weekly" | "daily">("weekly");
-  const [cash, setCash] = useState(100000);
+  const [cashInput, setCashInput] = useState("100000.00");
   const [cache, setCache] = useState(true);
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState("");
@@ -40,7 +40,7 @@ export default function Page() {
           optionalTickers,
           years,
           freq,
-          cash,
+          cash: Number(cashInput),
           cache,
           logLevel: "INFO",
         }),
@@ -116,9 +116,9 @@ export default function Page() {
                 id="cash"
                 type="number"
                 min={1}
-                step={100}
-                value={cash}
-                onChange={(e) => setCash(Number(e.target.value))}
+                step="0.01"
+                value={cashInput}
+                onChange={(e) => setCashInput(e.target.value)}
                 required
               />
             </div>
