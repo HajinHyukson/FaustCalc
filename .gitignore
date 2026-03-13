@@ -12,3 +12,7 @@ frontend/.next/
 # Misc local artifacts
 .DS_Store
 Thumbs.db
+
+# Secrets
+.env
+.env.*

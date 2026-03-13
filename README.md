@@ -124,3 +124,46 @@ Run local smoke tests (no network):
 ```powershell
 pytest
 ```
+
+## Vercel Deployment (Frontend + API Route)
+
+This repo now includes a Next.js app in `frontend/` with a server API route:
+- `POST /api/portfolio` -> runs `python -m src.cli` and returns the report text.
+
+### 1) Vercel project settings
+
+- Import the repo in Vercel.
+- Set **Root Directory** to `frontend`.
+- Framework Preset: `Next.js`.
+- Build command: `npm run build`.
+- Install command: `npm install`.
+
+### 2) Environment variables in Vercel
+
+Add the following in **Project Settings -> Environment Variables**:
+
+- `FMP_API_KEY` = your Financial Modeling Prep key (required)
+- `PYTHON_PATH` = `python3` (recommended for Vercel Linux runtime)
+
+### 3) What the deployment runs
+
+- UI page: `/`
+- API endpoint: `/api/portfolio`
+- API payload example:
+
+```json
+{
+  "requiredTickers": "SPY,QQQ",
+  "optionalTickers": "AAPL,MSFT,NVDA,AMZN",
+  "years": 3,
+  "freq": "weekly",
+  "cash": 100000,
+  "cache": true,
+  "logLevel": "INFO"
+}
+```
+
+### 4) Notes
+
+- The API route executes from Node runtime and shells out to Python, so the Python source under `src/` must be present in the deployment bundle.
+- If Python command resolution fails, set `PYTHON_PATH` explicitly.
