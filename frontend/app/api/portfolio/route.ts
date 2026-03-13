@@ -72,9 +72,19 @@ async function runCli(command: string, args: string[], cwd: string): Promise<{ c
 }
 
 async function proxyToVercelPython(request: NextRequest, rawBody: string) {
+  const cookie = request.headers.get("cookie");
+  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (cookie) {
+    headers.cookie = cookie;
+  }
+  if (bypass) {
+    headers["x-vercel-protection-bypass"] = bypass;
+  }
+
   const upstream = await fetch(`${request.nextUrl.origin}/api/portfolio_runner`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: rawBody,
     cache: "no-store",
   });
