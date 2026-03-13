@@ -144,6 +144,20 @@ class handler(BaseHTTPRequestHandler):
         env = os.environ.copy()
         env.setdefault("PYTHONUNBUFFERED", "1")
         env.setdefault("FAUSTCALC_CACHE_DIR", "/tmp/faustcalc-cache")
+        # Vercel may inject third-party deps into sys.path for the current process.
+        # Preserve that path in subprocess so `python -m src.cli` can import deps.
+        current_paths = [p for p in sys.path if p]
+        inherited_pythonpath = env.get("PYTHONPATH", "")
+        if inherited_pythonpath:
+            current_paths.extend([p for p in inherited_pythonpath.split(os.pathsep) if p])
+        deduped_paths: list[str] = []
+        seen: set[str] = set()
+        for p in current_paths:
+            if p not in seen:
+                seen.add(p)
+                deduped_paths.append(p)
+        if deduped_paths:
+            env["PYTHONPATH"] = os.pathsep.join(deduped_paths)
 
         try:
             result = subprocess.run(
