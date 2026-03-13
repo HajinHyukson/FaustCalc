@@ -8,6 +8,8 @@ const frontendRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(frontendRoot, "..");
 const sourceDir = path.join(repoRoot, "src");
 const targetDir = path.join(frontendRoot, "src");
+const frontendRequirements = path.join(frontendRoot, "requirements.txt");
+const apiRequirements = path.join(frontendRoot, "api", "requirements.txt");
 
 if (!fs.existsSync(sourceDir)) {
   throw new Error(`Source directory not found: ${sourceDir}`);
@@ -17,4 +19,10 @@ fs.rmSync(targetDir, { recursive: true, force: true });
 fs.mkdirSync(path.dirname(targetDir), { recursive: true });
 fs.cpSync(sourceDir, targetDir, { recursive: true });
 
+if (!fs.existsSync(frontendRequirements)) {
+  throw new Error(`Requirements file not found: ${frontendRequirements}`);
+}
+fs.cpSync(frontendRequirements, apiRequirements);
+
 console.log(`Synced Python sources: ${sourceDir} -> ${targetDir}`);
+console.log(`Synced Python requirements: ${frontendRequirements} -> ${apiRequirements}`);
