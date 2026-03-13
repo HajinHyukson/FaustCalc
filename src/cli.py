@@ -140,15 +140,13 @@ def main(
         "--cash",
         help="Total portfolio cash amount in USD.",
     ),
-    cache: bool = typer.Option(True, "--cache/--no-cache", help="Enable/disable on-disk response cache."),
+    cache: bool = typer.Option(True, "--cache", help="Enable on-disk response cache."),
+    no_cache: bool = typer.Option(False, "--no-cache", help="Disable on-disk response cache."),
     cache_ttl_hours: Optional[float] = typer.Option(
         None, "--cache-ttl-hours", help="Override cache TTL in hours."
     ),
-    plot_frontier: bool = typer.Option(
-        False,
-        "--plot-frontier/--no-plot-frontier",
-        help="Save efficient frontier chart (PNG).",
-    ),
+    plot_frontier: bool = typer.Option(False, "--plot-frontier", help="Save efficient frontier chart (PNG)."),
+    no_plot_frontier: bool = typer.Option(False, "--no-plot-frontier", help="Disable frontier chart output."),
     plot_path: str = typer.Option(
         "outputs/efficient_frontier.png",
         "--plot-path",
@@ -249,7 +247,8 @@ def main(
         "--no-trade-buffer",
         help="Absolute no-trade band around previous weights.",
     ),
-    dropna: bool = typer.Option(True, "--dropna/--no-dropna", help="Drop rows with any missing values."),
+    dropna: bool = typer.Option(True, "--dropna", help="Drop rows with any missing values."),
+    no_dropna: bool = typer.Option(False, "--no-dropna", help="Use pairwise alignment for missing values."),
     show_risk_contrib: bool = typer.Option(
         False, "--show-risk-contrib", help="Print risk contribution by asset."
     ),
@@ -258,6 +257,12 @@ def main(
 ):
     """Risk-first portfolio construction from user-selected tickers."""
     try:
+        if no_cache:
+            cache = False
+        if no_plot_frontier:
+            plot_frontier = False
+        if no_dropna:
+            dropna = False
         _configure_logging(log_level)
         settings = get_settings()
 
